@@ -356,7 +356,7 @@ export default function SellPage() {
                     </div>
                     <input
                       type="file"
-                      accept=".json,.csv"
+                      accept=".json,application/json"
                       className="hidden"
                       onChange={handleFileUpload}
                     />

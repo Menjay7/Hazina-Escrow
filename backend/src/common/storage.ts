@@ -21,6 +21,10 @@ export interface Transaction {
   datasetId: string;
   txHash: string;
   amount: number;
+  sellerPaid: boolean;
+  sellerAmount?: number;
+  sellerTxHash?: string;
+  sellerPayoutError?: string;
   buyerQuery?: string;
   aiSummary?: string;
   timestamp: string;
@@ -57,7 +61,12 @@ function ensureStore(): Store {
   }
   const raw = fs.readFileSync(DATA_PATH, 'utf-8');
   const parsed = JSON.parse(raw) as Partial<Store>;
+  if (!parsed.transactions) parsed.transactions = [];
   if (!parsed.webhooks) parsed.webhooks = [];
+  parsed.transactions = parsed.transactions.map((tx) => ({
+    ...tx,
+    sellerPaid: tx.sellerPaid ?? true,
+  }));
   return parsed as Store;
 }
 
@@ -118,6 +127,10 @@ export function getTransactionsCount(datasetId?: string): number {
   return datasetId ? store.transactions.filter((t) => t.datasetId === datasetId).length : store.transactions.length;
 }
 
+export function getUnpaidTransactions(): Transaction[] {
+  return readStore().transactions.filter((t) => t.sellerPaid === false);
+}
+
 export function txHashUsed(txHash: string): boolean {
   return readStore().transactions.some((t) => t.txHash === txHash);
 }
@@ -161,4 +174,3 @@ export function updateWebhook(id: string, updates: Partial<WebhookSubscription>)
   writeStore(store);
   return store.webhooks[idx];
 }
-
