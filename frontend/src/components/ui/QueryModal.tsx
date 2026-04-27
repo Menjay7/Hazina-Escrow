@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   X, Copy, Check, ExternalLink, Loader2, Sparkles,
   ShieldCheck, AlertCircle, ChevronRight, Zap
@@ -28,9 +29,11 @@ export default function QueryModal({ dataset, onClose, onSuccess }: Props) {
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
-  const [useDemoMode, setUseDemoMode] = useState(true);
+  const [useDemoMode, setUseDemoMode] = useState(false);
   const [verifyStage, setVerifyStage] = useState(0);
   const verifyTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(modalRef, step !== 'result' && step !== 'error');
 
   const typeMeta = getTypeMeta(dataset.type);
   const typeLabel = typeMeta.labelKey ? t(typeMeta.labelKey) : typeMeta.label;
@@ -72,7 +75,9 @@ export default function QueryModal({ dataset, onClose, onSuccess }: Props) {
       onSuccess({
         id: dataset.id,
         queriesServed: dataset.queriesServed + 1,
-        totalEarned: dataset.totalEarned + dataset.pricePerQuery * 0.95,
+        totalEarned: res.demo
+          ? dataset.totalEarned
+          : dataset.totalEarned + res.transaction.sellerReceived,
       });
     } catch (err: unknown) {
       clearInterval(verifyTimerRef.current!);
@@ -81,16 +86,36 @@ export default function QueryModal({ dataset, onClose, onSuccess }: Props) {
     }
   };
 
+  // Handle Escape key to close modal
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    if (step !== 'result' && step !== 'error') {
+      document.addEventListener('keydown', handleEscape);
+      return () => document.removeEventListener('keydown', handleEscape);
+    }
+  }, [step, onClose]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-void/80 backdrop-blur-sm"
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-lg glass-card-gold overflow-hidden max-h-[90vh] overflow-y-auto">
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("queryModal.details.title")}
+        className="relative w-full max-w-lg glass-card-gold overflow-hidden max-h-[90vh] overflow-y-auto"
+      >
         {/* Gold top bar */}
         <div className="h-px bg-gradient-to-r from-transparent via-gold to-transparent" />
 
@@ -108,8 +133,9 @@ export default function QueryModal({ dataset, onClose, onSuccess }: Props) {
           <button
             onClick={onClose}
             className="text-muted hover:text-foreground p-1 transition-colors flex-shrink-0"
+            aria-label={t("common.actions.close")}
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
@@ -206,8 +232,9 @@ export default function QueryModal({ dataset, onClose, onSuccess }: Props) {
                       <button
                         onClick={() => copyToClipboard(paymentInfo.paymentAddress, 'addr')}
                         className="text-gold hover:text-gold-light transition-colors"
+                        aria-label={t("common.actions.copyAddress")}
                       >
-                        {copied === 'addr' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copied === 'addr' ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
                       </button>
                     </div>
                     <p className="font-mono text-xs text-foreground break-all">{paymentInfo.paymentAddress}</p>
@@ -219,8 +246,9 @@ export default function QueryModal({ dataset, onClose, onSuccess }: Props) {
                       <button
                         onClick={() => copyToClipboard(paymentInfo.memo, 'memo')}
                         className="text-gold hover:text-gold-light transition-colors"
+                        aria-label={t("common.actions.copyMemo")}
                       >
-                        {copied === 'memo' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copied === 'memo' ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
                       </button>
                     </div>
                     <p className="font-mono text-sm text-amber-400">{paymentInfo.memo}</p>
@@ -395,20 +423,28 @@ export default function QueryModal({ dataset, onClose, onSuccess }: Props) {
                 </div>
               </div>
 
-              <div className="flex gap-3">
-                <button
-                  onClick={() => {
-                    const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `hazina-${dataset.id}.json`;
-                    a.click();
-                  }}
-                  className="btn-ghost flex-1 py-3 text-sm"
-                >
-                  {t("common.actions.downloadJson")}
-                </button>
+	              <div className="flex gap-3">
+	                <button
+	                  onClick={() => {
+	                    const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' });
+	                    const url = URL.createObjectURL(blob);
+	                    const a = document.createElement('a');
+
+	                    try {
+	                      a.href = url;
+	                      a.download = `hazina-${dataset.id}.json`;
+	                      document.body.appendChild(a);
+	                      a.click();
+	                    } finally {
+	                      a.remove();
+	                      // Let the download start before revoking the Object URL.
+	                      setTimeout(() => URL.revokeObjectURL(url), 0);
+	                    }
+	                  }}
+	                  className="btn-ghost flex-1 py-3 text-sm"
+	                >
+	                  {t("common.actions.downloadJson")}
+	                </button>
                 <button onClick={onClose} className="btn-gold flex-1 py-3 text-sm">
                   {t("common.actions.done")}
                 </button>
