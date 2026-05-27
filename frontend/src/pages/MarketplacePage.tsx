@@ -34,7 +34,7 @@ export default function MarketplacePage() {
   const [sort, setSort] = useState('popular');
   const [page, setPage] = useState(1);
   const [selectedDataset, setSelectedDataset] = useState<DatasetMeta | null>(null);
-  const pageSize = 12;
+  const requestedPageSize = 12;
 
   // Debounce: only update the query key 400 ms after the user stops typing.
   useEffect(() => {
@@ -51,7 +51,7 @@ export default function MarketplacePage() {
     queryFn: () =>
       api.getDatasets({
         page,
-        limit: pageSize,
+        limit: requestedPageSize,
         search,
         types: selectedTypes,
         minPrice: minPrice ? Number(minPrice) : undefined,
@@ -63,6 +63,7 @@ export default function MarketplacePage() {
 
   const datasets = data?.data || [];
   const total = data?.total || 0;
+  const pageSize = data?.pageSize || requestedPageSize;
   const totalPages = data?.totalPages || 1;
 
   useEffect(() => {
