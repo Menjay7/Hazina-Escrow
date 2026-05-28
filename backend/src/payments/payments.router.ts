@@ -27,6 +27,7 @@ import {
   markDeliveryFailure,
   processPayment,
 } from "./payments.service";
+import { PaymentError, StellarTimeoutError } from "./stellar.service";
 
 export const paymentsRouter = Router();
 scheduleRetrySweep(1_000);
@@ -307,11 +308,23 @@ paymentsRouter.get("/admin/payouts/stuck", requireAdminKey, (_req: Request, res:
   });
 });
 
-// POST /api/admin/payouts/retry — trigger retry sweep now
-paymentsRouter.post("/admin/payouts/retry", requireAdminKey, async (_req: Request, res: Response) => {
-  const processed = await runDuePayoutRetries();
-  scheduleRetrySweep(1_000);
-  return res.json({ success: true, processed });
+    return res.json({
+      ...result,
+      warning: null,
+    });
+  } catch (err) {
+    if (err instanceof StellarTimeoutError) {
+      // Network-level failure — not the client's fault
+      return res.status(503).json({ error: err.message });
+    }
+    if (err instanceof PaymentError) {
+      // Intentional user-facing error with a safe message we authored
+      return res.status(400).json({ error: err.message });
+    }
+    // Unexpected error — log full details server-side, send nothing internal to client
+    console.error("[Verify] Unexpected error processing payment:", err);
+    return res.status(500).json({ error: "Payment verification failed — please try again" });
+  }
 });
 
 // POST /api/verify/:id/demo — demo mode (skip Stellar check) for hackathon
